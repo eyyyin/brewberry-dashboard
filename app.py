@@ -46,6 +46,16 @@ Aplikasi ini menampilkan analisis media intelijen dari data yang Anda unggah.
 Anda dapat menjelajahi tren sentimen, keterlibatan, dan distribusi berdasarkan berbagai platform dan jenis media.
 """)
 
+# --- Menambahkan Logo ke Sidebar (di bagian atas) ---
+try:
+    st.sidebar.image("Brewberry_Logo.png", use_container_width=True) # Logo Brewberry - UBAH DI SINI
+except FileNotFoundError:
+    st.sidebar.warning("Logo Brewberry (Brewberry_Logo.png) tidak ditemukan. Pastikan ada di direktori yang sama dengan app.py.")
+except Exception as e:
+    st.sidebar.error(f"Error memuat logo: {e}")
+
+st.sidebar.markdown("---") # Garis pemisah di sidebar
+
 # --- Fungsi untuk Memuat dan Membersihkan Data ---
 @st.cache_data # Menggunakan cache untuk performa
 def load_data(uploaded_file):
@@ -56,33 +66,39 @@ def load_data(uploaded_file):
             st.write("---")
             st.subheader("Status Pembersihan Data Otomatis:")
 
-            # 1. Normalisasi nama kolom untuk konsistensi
-            # Mengubah semua nama kolom menjadi huruf kecil dan mengganti spasi/karakter khusus dengan underscore
+            # 1. Normalisasi nama kolom untuk konsistensi di backend (huruf kecil, underscore)
             original_columns = dataframe.columns.tolist()
-            st.info(f"Nama kolom asli: {', '.join(original_columns)}")
-            dataframe.columns = dataframe.columns.str.lower().str.replace(' ', '_').str.replace('[^a-z0-9_]', '', regex=True)
-            st.info(f"Nama kolom setelah normalisasi: {', '.join(dataframe.columns.tolist())}")
+            st.info(f"Nama kolom asli yang terdeteksi: **{', '.join(original_columns)}**")
 
-            # Pemetaan opsional untuk kolom yang sering berubah nama tapi maknanya sama
-            column_mapping = {
-                'engagement': 'engagements',
-                'media_type': 'media_type',
-                'sentiment': 'sentiment',
-                'platform': 'platform',
-                'date': 'date',
-                'location': 'location'
-            }
-            # Terapkan pemetaan hanya jika kolom target belum ada dan sumber ada
-            for old, new in column_mapping.items():
-                if old != new and old in dataframe.columns and new not in dataframe.columns:
-                    dataframe.rename(columns={old: new}, inplace=True)
-                    st.success(f"Kolom '{old}' dinormalisasi menjadi '{new}'.")
+            # Membuat dictionary pemetaan nama kolom asli ke nama yang dinormalisasi (huruf kecil, underscore)
+            normalized_columns_map = {}
+            for col in original_columns:
+                # Mengubah spasi dan karakter non-alphanumeric menjadi underscore
+                normalized_col = col.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
+                # Hapus karakter non-alphanumeric yang tersisa kecuali underscore
+                normalized_col = ''.join(e for e in normalized_col if e.isalnum() or e == '_')
+                normalized_columns_map[col] = normalized_col
             
-            # Verifikasi kolom penting setelah normalisasi
+            dataframe.rename(columns=normalized_columns_map, inplace=True)
+            st.success(f"Nama kolom dinormalisasi untuk pemrosesan internal.")
+
+            # Penyesuaian nama kolom yang sering bervariasi tapi maknanya sama
+            specific_column_corrections = {
+                'engagement': 'engagements', 
+                'media_type': 'media_type', 
+            }
+            for old_norm, new_norm in specific_column_corrections.items():
+                if old_norm in dataframe.columns and old_norm != new_norm:
+                    dataframe.rename(columns={old_norm: new_norm}, inplace=True)
+                    st.info(f"Mengoreksi nama kolom: '{old_norm}' menjadi '{new_norm}'.")
+            
+            # Verifikasi kolom penting yang digunakan di chart setelah normalisasi
             required_cols_for_charts = ['date', 'sentiment', 'engagements', 'platform', 'media_type', 'location']
-            for col in required_cols_for_charts:
-                if col not in dataframe.columns:
-                    st.warning(f"Kolom '{col}' (dibutuhkan untuk chart) tidak ditemukan dalam data setelah normalisasi.")
+            missing_cols = [col for col in required_cols_for_charts if col not in dataframe.columns]
+            if missing_cols:
+                st.warning(f"Perhatian: Kolom berikut (dibutuhkan untuk chart) tidak ditemukan dalam data Anda setelah normalisasi: **{', '.join(missing_cols)}**.")
+            else:
+                st.success("Semua kolom kunci yang dibutuhkan untuk visualisasi ditemukan.")
 
 
             # 2. Kolom 'date' dikonversi menjadi objek datetime & Baris dengan tanggal tidak valid dihapus.
@@ -91,28 +107,27 @@ def load_data(uploaded_file):
                 dataframe['date'] = pd.to_datetime(dataframe['date'], errors='coerce')
                 dataframe.dropna(subset=['date'], inplace=True)
                 rows_after_date_cleaning = len(dataframe)
-                st.success(f"Kolom 'date' dikonversi ke format datetime. Dihapus {initial_rows - rows_after_date_cleaning} baris dengan tanggal tidak valid.")
+                st.success(f"Kolom **'Date'** dikonversi ke format datetime. Dihapus {initial_rows - rows_after_date_cleaning} baris dengan tanggal tidak valid.")
             else:
-                st.warning("Kolom 'date' tidak ditemukan dalam data Anda. Filter tanggal dan tren waktu mungkin tidak berfungsi.")
+                st.warning("Kolom 'Date' tidak ditemukan dalam data Anda. Filter tanggal dan tren waktu mungkin tidak berfungsi.")
 
 
             # 3. Nilai 'engagements' yang hilang diisi dengan 0.
             if 'engagements' in dataframe.columns:
-                # Pastikan kolom adalah tipe numerik sebelum mengisi NaN
-                # Mengubah non-numerik menjadi NaN sebelum fillna
                 initial_na_engagements = dataframe['engagements'].isnull().sum()
                 dataframe['engagements'] = pd.to_numeric(dataframe['engagements'], errors='coerce')
                 dataframe['engagements'].fillna(0, inplace=True)
                 final_na_engagements = dataframe['engagements'].isnull().sum()
+                
                 if initial_na_engagements > 0:
-                    st.success(f"Nilai yang hilang di kolom 'engagements' ({initial_na_engagements} nilai) diisi dengan 0.")
+                    st.success(f"Nilai yang hilang di kolom **'Engagements'** ({initial_na_engagements} nilai) diisi dengan 0.")
                 elif final_na_engagements == 0:
-                     st.success("Kolom 'engagements' sudah bersih (tidak ada nilai hilang yang diisi).")
+                     st.success("Kolom 'Engagements' sudah bersih (tidak ada nilai hilang yang diisi).")
                 else:
-                     st.error("Ada masalah dengan konversi 'engagements' ke numerik. Beberapa nilai mungkin tetap NaN.")
+                     st.error("Ada masalah dengan konversi 'Engagements' ke numerik. Beberapa nilai mungkin tetap NaN.")
 
             else:
-                st.warning("Kolom 'engagements' tidak ditemukan dalam data Anda. Chart terkait keterlibatan mungkin tidak berfungsi.")
+                st.warning("Kolom 'Engagements' tidak ditemukan dalam data Anda. Chart terkait keterlibatan mungkin tidak berfungsi.")
 
             st.write("---")
 
@@ -135,15 +150,15 @@ if df is not None:
     # --- Sidebar Filter ---
     st.sidebar.header("Filter Data")
 
-    # Filter Platform (menggunakan 'platform' huruf kecil)
+    # Filter Platform (menggunakan 'platform' huruf kecil untuk akses data, tampilkan 'Platform' di UI)
     if 'platform' in df.columns:
         all_platforms = ['All'] + list(df['platform'].unique())
         selected_platform = st.sidebar.selectbox("Pilih Platform", all_platforms)
     else:
         selected_platform = 'All'
-        st.sidebar.warning("Kolom 'platform' tidak ditemukan dalam data Anda. Filter platform tidak tersedia.")
+        st.sidebar.warning("Kolom 'Platform' tidak ditemukan dalam data Anda. Filter platform tidak tersedia.")
 
-    # Filter Tanggal (menggunakan 'date' huruf kecil)
+    # Filter Tanggal (menggunakan 'date' huruf kecil untuk akses data, tampilkan 'Tanggal' di UI)
     if 'date' in df.columns and pd.api.types.is_datetime64_any_dtype(df['date']):
         min_date = df['date'].min().date()
         max_date = df['date'].max().date()
@@ -157,7 +172,7 @@ if df is not None:
             st.sidebar.warning("Pilih rentang tanggal untuk memfilter data.")
     else:
         df_filtered = df
-        st.sidebar.warning("Kolom 'date' tidak ditemukan atau tidak dalam format tanggal yang benar. Filter tanggal tidak tersedia.")
+        st.sidebar.warning("Kolom 'Date' tidak ditemukan atau tidak dalam format tanggal yang benar. Filter tanggal tidak tersedia.")
 
     # Terapkan filter platform
     if selected_platform != 'All' and 'platform' in df_filtered.columns:
@@ -170,12 +185,12 @@ if df is not None:
         st.subheader("1. Sentiment Breakdown")
         if 'sentiment' in df_filtered.columns:
             sentiment_counts = df_filtered['sentiment'].value_counts().reset_index()
-            sentiment_counts.columns = ['Sentiment', 'Count'] # Tetap gunakan 'Sentiment' untuk label chart
+            sentiment_counts.columns = ['Sentiment', 'Count'] # Nama kolom untuk Plotly Pie Chart
             fig_sentiment = px.pie(sentiment_counts, names='Sentiment', values='Count',
                                    title='Distribusi Sentimen',
                                    color_discrete_sequence=px.colors.qualitative.Pastel)
             fig_sentiment.update_traces(textinfo='percent+label')
-            st.plotly_chart(fig_sentiment, use_container_width=True)
+            st.plotly_chart(fig_sentiment, use_container_width=True) # UBAH DI SINI
 
             # Insight AI untuk Sentiment Breakdown
             with st.spinner('Menghasilkan insight AI untuk Sentimen...'):
@@ -187,7 +202,7 @@ if df is not None:
                 st.markdown("**Insight dari AI:**")
                 st.markdown(insight)
         else:
-            st.warning("Kolom 'sentiment' tidak ditemukan dalam data Anda. Chart Sentiment Breakdown tidak dapat dibuat.")
+            st.warning("Kolom 'Sentiment' tidak ditemukan dalam data Anda. Chart Sentiment Breakdown tidak dapat dibuat.")
 
         # 2. Engagement Trend (menggunakan 'engagements' dan 'date' huruf kecil)
         st.subheader("2. Engagement Trend")
@@ -196,8 +211,8 @@ if df is not None:
             engagement_trend['date'] = engagement_trend['date'].astype(str) # Ubah ke string untuk Plotly
             fig_engagement_trend = px.line(engagement_trend, x='date', y='engagements',
                                             title='Tren Keterlibatan Seiring Waktu',
-                                            labels={'date': 'Tanggal', 'engagements': 'Total Keterlibatan'})
-            st.plotly_chart(fig_engagement_trend, use_container_width=True)
+                                            labels={'date': 'Tanggal', 'engagements': 'Total Keterlibatan'}) # Label tampilan
+            st.plotly_chart(fig_engagement_trend, use_container_width=True) # UBAH DI SINI
 
             # Insight AI untuk Engagement Trend
             with st.spinner('Menghasilkan insight AI untuk Tren Keterlibatan...'):
@@ -209,7 +224,7 @@ if df is not None:
                 st.markdown("**Insight dari AI:**")
                 st.markdown(insight)
         else:
-            st.warning("Kolom 'engagements' atau 'date' tidak ditemukan dalam data Anda. Chart Engagement Trend tidak dapat dibuat.")
+            st.warning("Kolom 'Engagements' atau 'Date' tidak ditemukan dalam data Anda. Chart Engagement Trend tidak dapat dibuat.")
 
         # 3. Platform Engagements (menggunakan 'platform' dan 'engagements' huruf kecil)
         st.subheader("3. Platform Engagements")
@@ -217,9 +232,9 @@ if df is not None:
             platform_engagement = df_filtered.groupby('platform')['engagements'].sum().reset_index()
             fig_platform_engagement = px.bar(platform_engagement, x='platform', y='engagements',
                                              title='Keterlibatan Berdasarkan Platform',
-                                             labels={'platform': 'Platform Media', 'engagements': 'Total Keterlibatan'},
+                                             labels={'platform': 'Platform Media', 'engagements': 'Total Keterlibatan'}, # Label tampilan
                                              color='platform')
-            st.plotly_chart(fig_platform_engagement, use_container_width=True)
+            st.plotly_chart(fig_platform_engagement, use_container_width=True) # UBAH DI SINI
 
             # Insight AI untuk Platform Engagements
             with st.spinner('Menghasilkan insight AI untuk Keterlibatan Platform...'):
@@ -231,18 +246,19 @@ if df is not None:
                 st.markdown("**Insight dari AI:**")
                 st.markdown(insight)
         else:
-            st.warning("Kolom 'platform' atau 'engagements' tidak ditemukan dalam data Anda. Chart Platform Engagements tidak dapat dibuat.")
+            st.warning("Kolom 'Platform' atau 'Engagements' tidak ditemukan dalam data Anda. Chart Platform Engagements tidak dapat dibuat.")
 
         # 4. Media Type Mix (menggunakan 'media_type' huruf kecil)
         st.subheader("4. Media Type Mix")
         if 'media_type' in df_filtered.columns:
             media_type_counts = df_filtered['media_type'].value_counts().reset_index()
-            media_type_counts.columns = ['Media_Type', 'Count'] # Tetap gunakan 'Media_Type' untuk label chart
-            fig_media_type = px.pie(media_type_counts, names='Media_Type', values='Count',
+            # Ubah nama kolom untuk tampilan tanpa underscore di chart pie Plotly
+            media_type_counts.columns = ['Media Type', 'Count'] 
+            fig_media_type = px.pie(media_type_counts, names='Media Type', values='Count',
                                     title='Distribusi Jenis Media',
                                     color_discrete_sequence=px.colors.qualitative.Set3)
             fig_media_type.update_traces(textinfo='percent+label')
-            st.plotly_chart(fig_media_type, use_container_width=True)
+            st.plotly_chart(fig_media_type, use_container_width=True) # UBAH DI SINI
 
             # Insight AI untuk Media Type Mix
             with st.spinner('Menghasilkan insight AI untuk Distribusi Jenis Media...'):
@@ -254,7 +270,7 @@ if df is not None:
                 st.markdown("**Insight dari AI:**")
                 st.markdown(insight)
         else:
-            st.warning("Kolom 'media_type' tidak ditemukan dalam data Anda. Chart Media Type Mix tidak dapat dibuat.")
+            st.warning("Kolom 'Media Type' tidak ditemukan dalam data Anda. Chart Media Type Mix tidak dapat dibuat.")
 
         # 5. Top 5 Locations by Engagement (menggunakan 'location' dan 'engagements' huruf kecil)
         st.subheader("5. Top 5 Locations by Engagement")
@@ -262,9 +278,9 @@ if df is not None:
             location_engagement = df_filtered.groupby('location')['engagements'].sum().nlargest(5).reset_index()
             fig_top_locations = px.bar(location_engagement, x='location', y='engagements',
                                        title='5 Lokasi Teratas Berdasarkan Keterlibatan',
-                                       labels={'location': 'Lokasi', 'engagements': 'Total Keterlibatan'},
+                                       labels={'location': 'Lokasi', 'engagements': 'Total Keterlibatan'}, # Label tampilan
                                        color='location')
-            st.plotly_chart(fig_top_locations, use_container_width=True)
+            st.plotly_chart(fig_top_locations, use_container_width=True) # UBAH DI SINI
 
             # Insight AI untuk Top 5 Locations
             with st.spinner('Menghasilkan insight AI untuk Lokasi Teratas...'):
@@ -276,8 +292,17 @@ if df is not None:
                 st.markdown("**Insight dari AI:**")
                 st.markdown(insight)
         else:
-            st.warning("Kolom 'location' atau 'engagements' tidak ditemukan dalam data Anda. Chart Top 5 Locations tidak dapat dibuat.")
+            st.warning("Kolom 'Location' atau 'Engagements' tidak ditemukan dalam data Anda. Chart Top 5 Locations tidak dapat dibuat.")
     else:
         st.warning("Tidak ada data yang tersedia setelah filter diterapkan. Coba sesuaikan filter Anda atau unggah file CSV yang berbeda.")
 else:
     st.info("Silakan unggah file CSV Anda untuk memulai.")
+
+# --- Menambahkan Gambar Kemasan Kaleng di Sidebar (di bagian bawah) ---
+st.sidebar.markdown("---") # Garis pemisah
+try:
+    st.sidebar.image("Brewberry_can.png", use_container_width=True) # Gambar kaleng kemasan - UBAH DI SINI
+except FileNotFoundError:
+    st.sidebar.warning("Gambar kemasan kaleng (Brewberry_can.png) tidak ditemukan. Pastikan ada di direktori yang sama dengan app.py.")
+except Exception as e:
+    st.sidebar.error(f"Error memuat gambar kemasan kaleng: {e}")
